@@ -27,6 +27,8 @@ def psf2otf(kernel: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     which keeps the output aligned with the input (no shift).
     """
     kh, kw = kernel.shape
+    if kh > shape[0] or kw > shape[1]:
+        raise ValueError(f"kernel {kw}x{kh} is larger than the image {shape[1]}x{shape[0]}")
     padded = np.zeros(shape, dtype=np.float64)
     padded[:kh, :kw] = kernel
     padded = np.roll(padded, (-(kh // 2), -(kw // 2)), axis=(0, 1))
@@ -137,7 +139,7 @@ def richardson_lucy(
 
     More iterations = sharper but noisier. Output stays non-negative.
     `callback(i, estimate)` is called after each iteration if given
-    (useful later for a GUI progress bar / live preview).
+    (the GUI uses it for progress, live preview and cancelling).
     """
     padded, pad = _pad_for_deconv(np.clip(np.asarray(image, dtype=np.float64), 0, None), kernel, boundary)
     shape = padded.shape[:2]

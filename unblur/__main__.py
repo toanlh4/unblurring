@@ -1,5 +1,6 @@
 """Command-line interface.
 
+    python -m unblur gui [image]                  # desktop app
     python -m unblur demo                         # synthetic end-to-end test
     python -m unblur blur   in.png out.png --kernel line --size 25 --angle 30
     python -m unblur deblur in.png out.png --kernel line --size 25 --angle 30 --nsr 1e-3
@@ -19,33 +20,25 @@ import numpy as np
 from . import imageio
 from .deconvolve import BOUNDARIES, convolve, deconvolve
 from .kernels import KERNELS, make_kernel
+from .pipeline import Params, process
 
 
-def kernel_from_args(args: argparse.Namespace, size: float | None = None) -> np.ndarray:
-    """Map the generic --size option onto each kernel's own parameter."""
-    size = args.size if size is None else size
-    soft = args.softness
-    if args.kernel == "line":
-        return make_kernel("line", length=size, angle=args.angle, thickness=args.thickness, softness=soft)
-    if args.kernel == "disk":
-        return make_kernel("disk", radius=size, softness=soft)
-    if args.kernel == "polygon":
-        return make_kernel("polygon", radius=size, sides=args.sides, rotation=args.angle, softness=soft)
-    if args.kernel == "box":
-        return make_kernel("box", width=size, softness=soft)
-    return make_kernel("gaussian", sigma=size)
-
-
-def deblur_with_args(image: np.ndarray, kernel: np.ndarray, args: argparse.Namespace) -> np.ndarray:
-    if args.linear:
-        image = imageio.srgb_to_linear(image)
-    if args.method == "wiener":
-        out = deconvolve(image, kernel, "wiener", nsr=args.nsr, boundary=args.boundary)
-    else:
-        out = deconvolve(image, kernel, "richardson_lucy", iterations=args.iterations, boundary=args.boundary)
-    if args.linear:
-        out = imageio.linear_to_srgb(out)
-    return np.clip(out, 0, 1)
+def params_from_args(args: argparse.Namespace, size: float | None = None) -> Params:
+    """Collect the options; `blur` has no deconvolution ones, so those fall back to defaults."""
+    d = Params()
+    return Params(
+        kernel=args.kernel,
+        size=args.size if size is None else size,
+        angle=args.angle,
+        sides=args.sides,
+        thickness=args.thickness,
+        softness=args.softness,
+        method=getattr(args, "method", d.method),
+        nsr=getattr(args, "nsr", d.nsr),
+        iterations=getattr(args, "iterations", d.iterations),
+        boundary=getattr(args, "boundary", d.boundary),
+        linear=getattr(args, "linear", d.linear),
+    )
 
 
 def add_kernel_args(p: argparse.ArgumentParser) -> None:
@@ -71,7 +64,7 @@ def add_deblur_args(p: argparse.ArgumentParser) -> None:
 
 def cmd_blur(args: argparse.Namespace) -> None:
     image = imageio.load(args.input, gray=args.gray)
-    kernel = kernel_from_args(args)
+    kernel = params_from_args(args).build_kernel()
     out = convolve(image, kernel)
     if args.noise > 0:
         out = out + np.random.default_rng(0).normal(0, args.noise, out.shape)
@@ -83,9 +76,10 @@ def cmd_blur(args: argparse.Namespace) -> None:
 
 def cmd_deblur(args: argparse.Namespace) -> None:
     image = imageio.load(args.input, gray=args.gray)
-    kernel = kernel_from_args(args)
+    params = params_from_args(args)
+    kernel = params.build_kernel()
     t = time.perf_counter()
-    out = deblur_with_args(image, kernel, args)
+    out = process(image, params)
     dt = time.perf_counter() - t
     imageio.save(args.output, out)
     if args.save_kernel:
@@ -109,7 +103,7 @@ def cmd_sweep(args: argparse.Namespace) -> None:
     'scrubbing the radius until it looks right'."""
     image = imageio.load(args.input, gray=args.gray)
     sizes = parse_range(args.sizes)
-    results = [deblur_with_args(image, kernel_from_args(args, s), args) for s in sizes]
+    results = [process(image, params_from_args(args, s)) for s in sizes]
     sheet = imageio.contact_sheet(results, [f"size {s:g}" for s in sizes], columns=args.columns)
     imageio.save(args.output, sheet)
     print(f"swept {len(sizes)} sizes -> {args.output}")
@@ -166,6 +160,12 @@ def cmd_demo(args: argparse.Namespace) -> None:
     print(f"wrote {out_dir / 'demo_sheet.png'} (+ demo_sharp.png, demo_blurred_line.png)")
 
 
+def cmd_gui(args: argparse.Namespace) -> None:
+    from .gui import run  # imported here so the other commands work without PySide6
+
+    raise SystemExit(run(args.image))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m unblur", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -196,6 +196,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--nsr", type=float, default=1e-3)
     p.add_argument("--iterations", type=int, default=50)
     p.set_defaults(func=cmd_demo)
+
+    p = sub.add_parser("gui", help="open the desktop app")
+    p.add_argument("image", nargs="?", help="image to open at startup")
+    p.set_defaults(func=cmd_gui)
 
     args = parser.parse_args(argv)
     args.func(args)

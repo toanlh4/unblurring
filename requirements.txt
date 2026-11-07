@@ -1,4 +1,5 @@
 numpy
 scipy
 pillow
+PySide6-Essentials
 pytest

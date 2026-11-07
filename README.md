@@ -1,8 +1,8 @@
 # unblur
 
 Image unblurring by deconvolution (Wiener and Richardson-Lucy), inspired by
-<https://maxvanleeuwen.com/project/unblurring-images/>. Core library + CLI;
-a PySide6 GUI comes next.
+<https://maxvanleeuwen.com/project/unblurring-images/>. Desktop app (PySide6),
+command line, and Python library.
 
 ## Examples
 
@@ -44,13 +44,58 @@ finding line size
 
 - Deblur sweep: `python -m unblur sweep images\example4\line_30_38.jpg images\example4\deblur_line_sweep_21_35.jpg --kernel line --sizes 21:35:2 --angle 38`
 
+## The GUI
+
+Command to run the GUI: `python -m unblur gui`
+
+![](images/GUI/GUI.png)
+
 ## Setup
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## Try it
+## Desktop app
+
+```powershell
+.venv\Scripts\python.exe -m unblur gui
+.venv\Scripts\python.exe -m unblur gui images\example4\disk_40.jpg
+```
+
+Open an image (`Ctrl+O`, or drop it on the window), then move the sliders. The
+result updates as you go, and hovering over a control explains it.
+
+1. Pick the **Shape** that matches the blur, and compare the **kernel picture**
+   with a smeared dot in the photo. See
+   [Finding the right kernel values](#finding-the-right-kernel-values).
+2. Drag **Length/Radius** (and **Angle**) until ghost copies and rings disappear.
+3. Adjust **NSR** or **Iterations** to trade sharpness against grain.
+4. **Save result…** (`Ctrl+S`) renders at full resolution, whatever the preview size.
+
+| Viewer | |
+|---|---|
+| Wheel / drag | zoom around the cursor / pan |
+| Drag the white line | move the before/after split |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | split / result only / original only |
+| `F` / `1` | fit to window / 100% |
+
+**Preview** sets the longest side of the live render. Images larger than that are
+shrunk, with the kernel scaled to match, so the preview only approximates the final
+result: choose **Full resolution** to check fine detail. Sizes stay in original-image
+pixels, so the values you find also work on the command line.
+
+Measured on a 4000×3000 photo (radius 20):
+
+| Preview | Wiener | Richardson-Lucy, 30 iterations |
+|---|---|---|
+| 640 px | 0.2 s | 2 s |
+| 1024 px (default) | 0.5 s | 5 s |
+| 1600 px | 1.3 s | 23 s |
+
+Richardson-Lucy shows its progress as it runs, and changing a setting restarts it.
+
+## Command line
 
 ```powershell
 # Synthetic end-to-end test: blurs a chart with 4 kernels, deblurs, prints PSNR,
@@ -70,7 +115,7 @@ finding line size
 Run from the project folder (the one containing `pyproject.toml`):
 
 ```powershell
-# All tests (expected: "14 passed")
+# All tests (expected: "32 passed")
 .venv\Scripts\python.exe -m pytest
 
 # Verbose: list every test with PASSED/FAILED
@@ -87,6 +132,9 @@ Run from the project folder (the one containing `pyproject.toml`):
 ```
 
 If the venv is activated (`.venv\Scripts\Activate.ps1`), you can type just `pytest`.
+
+`tests/test_gui.py` drives the real window without showing it, so it also runs on
+a machine with no display.
 
 What `tests/test_core.py` checks:
 
@@ -194,8 +242,10 @@ save("out.png", deconvolve(load("in.png"), k, "wiener", nsr=1e-3).clip(0, 1))
 - `unblur/kernels.py` — anti-aliased kernel generators (`make_kernel`)
 - `unblur/deconvolve.py` — FFT convolution, Wiener, Richardson-Lucy, edge tapering
 - `unblur/imageio.py` — load/save, sRGB↔linear, PSNR, contact sheets
+- `unblur/pipeline.py` — deblur settings and steps shared by the CLI and the app
 - `unblur/__main__.py` — CLI
-- `tests/test_core.py` — unit tests (pytest settings in `pyproject.toml`)
+- `unblur/gui.py` — desktop app
+- `tests/test_core.py`, `tests/test_gui.py` — tests (pytest settings in `pyproject.toml`)
 
 ## Tips / limits
 

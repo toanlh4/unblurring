@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 def load(path: str | Path, gray: bool = False) -> np.ndarray:
-    img = Image.open(path)
+    # Honor the EXIF orientation, or phone photos load sideways and --angle means the wrong thing.
+    img = ImageOps.exif_transpose(Image.open(path))
     img = img.convert("L" if gray else "RGB")
     return np.asarray(img, dtype=np.float64) / 255.0
 
@@ -17,7 +18,9 @@ def load(path: str | Path, gray: bool = False) -> np.ndarray:
 def save(path: str | Path, image: np.ndarray) -> None:
     out = np.clip(np.round(image * 255), 0, 255).astype(np.uint8)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(out).save(path)
+    # Pillow's default JPEG quality (75) would add artifacts to a freshly deblurred image.
+    options = {"quality": 95} if Path(path).suffix.lower() in (".jpg", ".jpeg") else {}
+    Image.fromarray(out).save(path, **options)
 
 
 def srgb_to_linear(image: np.ndarray) -> np.ndarray:
